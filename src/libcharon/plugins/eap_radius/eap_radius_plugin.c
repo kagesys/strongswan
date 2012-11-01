@@ -86,7 +86,7 @@ static void load_configs(private_eap_radius_plugin_t *this)
 {
 	enumerator_t *enumerator;
 	radius_config_t *config;
-	char *nas_identifier, *secret, *address, *section;
+	char *nas_identifier, *nas_ip, *secret, *address, *section;
 	int auth_port, acct_port, sockets, preference;
 
 	address = lib->settings->get_str(lib->settings,
@@ -103,12 +103,17 @@ static void load_configs(private_eap_radius_plugin_t *this)
 		nas_identifier = lib->settings->get_str(lib->settings,
 					"%s.plugins.eap-radius.nas_identifier", "strongSwan",
 					charon->name);
+                nas_ip = lib->settings->get_str(lib->settings,
+                                        "%s.plugins.eap-radius.nas_ip", "strongSwan",
+					charon->name);
+		DBG1(DBG_CFG, "nas_ip: %s\n", nas_ip);
+
 		auth_port = lib->settings->get_int(lib->settings,
 					"%s.plugins.eap-radius.port", AUTH_PORT, charon->name);
 		sockets = lib->settings->get_int(lib->settings,
 					"%s.plugins.eap-radius.sockets", 1, charon->name);
 		config = radius_config_create(address, address, auth_port, ACCT_PORT,
-									  nas_identifier, secret, sockets, 0);
+									  nas_identifier, nas_ip, secret, sockets, 0);
 		if (!config)
 		{
 			DBG1(DBG_CFG, "no RADUIS server defined");
@@ -141,6 +146,9 @@ static void load_configs(private_eap_radius_plugin_t *this)
 		nas_identifier = lib->settings->get_str(lib->settings,
 				"%s.plugins.eap-radius.servers.%s.nas_identifier", "strongSwan",
 				charon->name, section);
+                nas_ip = lib->settings->get_str(lib->settings,
+                                "%s.plugins.eap-radius.nas_ip", "strongSwan",
+                                charon->name, section);
 		auth_port = lib->settings->get_int(lib->settings,
 			"%s.plugins.eap-radius.servers.%s.auth_port",
 				lib->settings->get_int(lib->settings,
@@ -157,7 +165,7 @@ static void load_configs(private_eap_radius_plugin_t *this)
 				"%s.plugins.eap-radius.servers.%s.preference", 0,
 				charon->name, section);
 		config = radius_config_create(section, address, auth_port, acct_port,
-								nas_identifier, secret, sockets, preference);
+								nas_identifier, nas_ip, secret, sockets, preference);
 		if (!config)
 		{
 			DBG1(DBG_CFG, "loading RADIUS server '%s' failed, skipped", section);

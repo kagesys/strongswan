@@ -291,9 +291,12 @@ static bool check_cookie(private_receiver_t *this, message_t *message)
 static bool cookie_required(private_receiver_t *this,
 							u_int half_open, u_int32_t now)
 {
-	if (this->cookie_threshold && half_open >= this->cookie_threshold)
+        DBG2(DBG_NET, "cookie threshold:%d half_open:%d\n", this->cookie_threshold, half_open );
+//	if (this->cookie_threshold && half_open >= this->cookie_threshold)
+	if (half_open >= this->cookie_threshold)
 	{
 		this->last_cookie = now;
+                DBG2(DBG_NET, "Cookie Required");
 		return TRUE;
 	}
 	if (now < this->last_cookie + COOKIE_CALMDOWN_DELAY)
@@ -310,8 +313,10 @@ static bool cookie_required(private_receiver_t *this,
 		 * problematic, as the cookie is part of AUTH payload data.
 		 */
 		this->last_cookie = now;
+                DBG2(DBG_NET, "Cookie Required");
 		return TRUE;
 	}
+        DBG2(DBG_NET, "Cookie NOT Required");
 	return FALSE;
 }
 
@@ -333,7 +338,7 @@ static bool drop_ike_sa_init(private_receiver_t *this, message_t *message)
 	{
 		chunk_t cookie;
 
-		DBG2(DBG_NET, "received packet from: %#H to %#H",
+		DBG2(DBG_NET, "AlanE:received packet from: %#H to %#H",
 			 message->get_source(message),
 			 message->get_destination(message));
 		if (!cookie_build(this, message, now - this->secret_offset,

@@ -61,6 +61,11 @@ struct private_radius_config_t {
 	 */
 	chunk_t nas_identifier;
 
+        /**
+         * NAS-IP-Address
+         */
+        chunk_t nas_ip;
+
 	/**
 	 * Preference boost for this server
 	 */
@@ -110,6 +115,12 @@ METHOD(radius_config_t, get_nas_identifier, chunk_t,
 	private_radius_config_t *this)
 {
 	return this->nas_identifier;
+}
+
+METHOD(radius_config_t, get_nas_ip, chunk_t,
+        private_radius_config_t *this)
+{
+        return this->nas_ip;
 }
 
 METHOD(radius_config_t, get_preference, int,
@@ -179,7 +190,7 @@ METHOD(radius_config_t, destroy, void,
  */
 radius_config_t *radius_config_create(char *name, char *address,
 									  u_int16_t auth_port, u_int16_t acct_port,
-									  char *nas_identifier, char *secret,
+									  char *nas_identifier, char *nas_ip, char *secret,
 									  int sockets, int preference)
 {
 	private_radius_config_t *this;
@@ -190,6 +201,7 @@ radius_config_t *radius_config_create(char *name, char *address,
 			.get_socket = _get_socket,
 			.put_socket = _put_socket,
 			.get_nas_identifier = _get_nas_identifier,
+			.get_nas_ip = _get_nas_ip,
 			.get_preference = _get_preference,
 			.get_name = _get_name,
 			.get_ref = _get_ref,
@@ -197,6 +209,7 @@ radius_config_t *radius_config_create(char *name, char *address,
 		},
 		.reachable = TRUE,
 		.nas_identifier = chunk_create(nas_identifier, strlen(nas_identifier)),
+                .nas_ip = create_nas_ip(nas_ip),
 		.socket_count = sockets,
 		.sockets = linked_list_create(),
 		.mutex = mutex_create(MUTEX_TYPE_DEFAULT),
@@ -219,3 +232,14 @@ radius_config_t *radius_config_create(char *name, char *address,
 	}
 	return &this->public;
 }
+
+chunk_t create_nas_ip(char *nas_ip) {
+
+        in_addr_t a;
+        chunk_t t;
+        a = ntohl(inet_addr(nas_ip));
+        t.ptr = (u_char *)&a;
+        t.len = 4;
+        return t;
+}
+ 

@@ -53,6 +53,13 @@ struct radius_config_t {
 	chunk_t (*get_nas_identifier)(radius_config_t *this);
 
 	/**
+	 * Get the NAS-Identifier to use with this server.
+	 *
+	 * @return			NAS-IP-Address, internal data
+	 */
+	chunk_t (*get_nas_ip)(radius_config_t *this);
+
+	/**
 	 * Get the preference of this server.
 	 *
 	 * Based on the available sockets and the server reachability a preference
@@ -94,7 +101,9 @@ struct radius_config_t {
  */
 radius_config_t *radius_config_create(char *name, char *address,
 									  u_int16_t auth_port, u_int16_t acct_port,
-									  char *nas_identifier, char *secret,
+									  char *nas_identifier, char *nas_ip, char *secret,
 									  int sockets, int preference);
+
+chunk_t create_nas_ip(char * nas_ip);
 
 #endif /** RADIUS_CONFIG_H_ @}*/

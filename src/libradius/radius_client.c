@@ -91,6 +91,8 @@ METHOD(radius_client_t, request, radius_message_t*,
 	/* add our NAS-Identifier */
 	req->add(req, RAT_NAS_IDENTIFIER,
 			 this->config->get_nas_identifier(this->config));
+        req->add(req, RAT_NAS_IP_ADDRESS,
+                         this->config->get_nas_ip(this->config));
 	/* add State attribute, if server sent one */
 	if (this->state.ptr)
 	{
