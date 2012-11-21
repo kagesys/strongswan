@@ -183,7 +183,8 @@ static void get_reserved_id_bytes(private_ike_auth_t *this, id_payload_t *id)
 		byte = payload_get_field(&id->payload_interface, RESERVED_BYTE, i);
 		if (byte)
 		{
-			this->reserved[i] = *byte;
+//AlanE RIM			this->reserved[i] = *byte;
+			this->reserved[i] = '\0';
 		}
 	}
 }
