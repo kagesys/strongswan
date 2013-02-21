@@ -54,7 +54,8 @@ struct keymat_v2_t {
 							diffie_hellman_t *dh, chunk_t nonce_i,
 							chunk_t nonce_r, ike_sa_id_t *id,
 							pseudo_random_function_t rekey_function,
-							chunk_t rekey_skd);
+							chunk_t rekey_skd, host_t *src, host_t *dst);
+
 
 	/**
 	 * Derive keys for a CHILD_SA.

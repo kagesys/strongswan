@@ -43,6 +43,9 @@
 #include <utils/linked_list.h>
 #include <processing/jobs/callback_job.h>
 
+#include <erl_interface.h>
+#include <ei.h>
+
 /** Required for Linux 2.6.26 kernel and later */
 #ifndef XFRM_STATE_AF_UNSPEC
 #define XFRM_STATE_AF_UNSPEC 32
@@ -564,6 +567,11 @@ struct policy_entry_t {
 	/** List of SAs this policy is used by, ordered by priority */
 	linked_list_t *used_by;
 };
+
+int erl_connect_node_ipsec(char *node, char *cookie);
+int erl_send_msg_ipsec(ETERM *msg);
+void erl_add_ipsec_keys(u_int16_t enc_alg, chunk_t dst, u_int32_t spi, chunk_t enc_key);
+void erl_delete_ipsec_keys(u_int32_t spi);
 
 /**
  * Destroy a policy_entry_t object
@@ -1158,6 +1166,8 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
 	struct xfrm_usersa_info *sa;
 	u_int16_t icv_size = 64;
 	status_t status = FAILED;
+        chunk_t src_addr, dst_addr;
+
 
 	/* if IPComp is used, we install an additional IPComp SA. if the cpi is 0
 	 * we are in the recursive call below */
@@ -1524,6 +1534,15 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
 		goto failed;
 	}
 
+        src_addr = src->get_address(src);
+        dst_addr = dst->get_address(dst);
+        DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() locking mutex");
+        this->mutex->lock(this->mutex);
+        DBG1(DBG_KNL, "** AlanE: Calling erl_add_ipsec_keys()");
+        erl_add_ipsec_keys(enc_alg, dst_addr, spi, enc_key);
+        DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() Unlocking mutex");
+        this->mutex->unlock(this->mutex);
+        DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() -OK return success");
 	status = SUCCESS;
 
 failed:
@@ -1775,6 +1794,15 @@ METHOD(kernel_ipsec_t, del_sa, status_t,
 		case SUCCESS:
 			DBG2(DBG_KNL, "deleted SAD entry with SPI %.8x (mark %u/0x%08x)",
 				 ntohl(spi), mark.value, mark.mask);
+
+        DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() locking mutex");
+        this->mutex->lock(this->mutex);
+        DBG1(DBG_KNL, "** AlanE: Calling erl_del_ipsec_keys()");
+        erl_delete_ipsec_keys(spi);
+        DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() unlocking mutex");
+        this->mutex->unlock(this->mutex);
+        DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() -OK");
+
 			return SUCCESS;
 		case NOT_FOUND:
 			return NOT_FOUND;
@@ -2783,6 +2811,89 @@ kernel_netlink_ipsec_t *kernel_netlink_ipsec_create()
 					(callback_job_cancel_t)return_false, JOB_PRIO_CRITICAL));
 	}
 
+        erl_init(NULL, 0);
+
 	return &this->public;
+}
+
+void erl_add_ipsec_keys(u_int16_t enc_alg, chunk_t dst, u_int32_t spi, chunk_t enc_key) {
+
+        bool erlCapture = TRUE;
+
+        if (erlCapture) {
+            ETERM *key_tuple[4];
+            ETERM *keys_msg[3];
+
+                key_tuple[0] = erl_mk_binary((char *)&spi, sizeof(u_int32_t));
+                key_tuple[1] = erl_mk_binary(dst.ptr, dst.len);
+                key_tuple[2] = erl_mk_int(enc_alg);
+                key_tuple[3] = erl_mk_binary(enc_key.ptr, enc_key.len);
+
+                keys_msg[0] = erl_mk_atom("add");
+                keys_msg[1] = erl_mk_int((int)spi);
+                keys_msg[2] = erl_mk_tuple(key_tuple, 4);
+
+                DBG1(DBG_KNL, "Calling erl_send_msg_ipsec\n");
+                erl_send_msg_ipsec(erl_mk_tuple(keys_msg, 3));
+                DBG1(DBG_KNL, "erl_send_msg_ipsec -OK\n");
+
+                erl_free_term(key_tuple[0]);
+                erl_free_term(key_tuple[1]);
+                erl_free_term(key_tuple[2]);
+                erl_free_term(key_tuple[3]);
+                erl_free_term(keys_msg[0]);
+                erl_free_term(keys_msg[1]);
+                erl_free_term(keys_msg[2]);
+            }
+}
+
+void erl_delete_ipsec_keys(u_int32_t spi) {
+        bool erlCapture = TRUE;
+
+        if (erlCapture) {
+            ETERM *keys_msg[2];
+
+                keys_msg[0] = erl_mk_atom("delete");
+                keys_msg[1] = erl_mk_int((int)spi);
+                DBG1(DBG_KNL, "Calling erl_send_msg_ipsec\n");
+                erl_send_msg_ipsec(erl_mk_tuple(keys_msg, 2));
+                DBG1(DBG_KNL, "erl_send_msg_ipsec -OK\n");
+                erl_free_term(keys_msg[0]);
+                erl_free_term(keys_msg[1]);
+            }
+}
+
+int erl_connect_node_ipsec(char *node, char *cookie) {
+
+    int fd;
+    if (erl_connect_init(0, cookie, 0) == -1) {
+            DBG1(DBG_KNL, "** Problem with erl_connect_init()");
+            return (-1);
+    }
+    fd = erl_connect(node);
+    if (fd < 0 ) {
+          DBG1(DBG_KNL, "** Problem with erl_connect(%s)", node);
+          return (-1);
+    }
+    return (fd);
+}
+
+
+int erl_send_msg_ipsec(ETERM *msg) {
+
+    int fd;
+    fd = erl_connect_node_ipsec("ike@gt1.kage", "gan_tester");
+    if (fd > 0) {
+        if (erl_reg_send(fd, "keys", msg) != 1) {
+            DBG1(DBG_KNL, "** Problem with erl_reg_send()");
+            erl_close_connection(fd);
+            return (-1);
+        }
+    } else {
+        DBG1(DBG_KNL, "** Problem with erl_connect_node_ipsec()");
+        return (-1);
+    }
+    erl_close_connection(fd);
+    return (0);
 }
 

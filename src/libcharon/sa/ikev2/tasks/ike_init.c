@@ -337,7 +337,7 @@ METHOD(task_t, process_r,  status_t,
  * Derive the keymat for the IKE_SA
  */
 static bool derive_keys(private_ike_init_t *this,
-						chunk_t nonce_i, chunk_t nonce_r)
+						chunk_t nonce_i, chunk_t nonce_r,  message_t *message)
 {
 	keymat_v2_t *old_keymat;
 	pseudo_random_function_t prf_alg = PRF_UNDEFINED;
@@ -359,8 +359,9 @@ static bool derive_keys(private_ike_init_t *this,
 			id->set_initiator_spi(id, this->proposal->get_spi(this->proposal));
 		}
 	}
-	if (!this->keymat->derive_ike_keys(this->keymat, this->proposal, this->dh,
-									   nonce_i, nonce_r, id, prf_alg, skd))
+        if (!this->keymat->derive_ike_keys(this->keymat, this->proposal, this->dh,
+                                           nonce_i, nonce_r, id, prf_alg, skd,
+                                           message->get_source(message), message->get_destination(message)))
 	{
 		return FALSE;
 	}
@@ -405,7 +406,7 @@ METHOD(task_t, build_r, status_t,
 		return FAILED;
 	}
 
-	if (!derive_keys(this, this->other_nonce, this->my_nonce))
+        if (!derive_keys(this, this->other_nonce, this->my_nonce, message))
 	{
 		DBG1(DBG_IKE, "key derivation failed");
 		message->add_notify(message, TRUE, NO_PROPOSAL_CHOSEN, chunk_empty);
@@ -506,8 +507,8 @@ METHOD(task_t, process_i, status_t,
 		return FAILED;
 	}
 
-	if (!derive_keys(this, this->my_nonce, this->other_nonce))
-	{
+	if (!derive_keys(this, this->my_nonce, this->other_nonce, message))
+        {
 		DBG1(DBG_IKE, "key derivation failed");
 		return FAILED;
 	}

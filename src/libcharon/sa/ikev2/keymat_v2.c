@@ -18,6 +18,10 @@
 #include <daemon.h>
 #include <crypto/prf_plus.h>
 
+#include <erl_interface.h>
+#include <ei.h>
+
+
 typedef struct private_keymat_v2_t private_keymat_v2_t;
 
 /**
@@ -70,6 +74,11 @@ struct private_keymat_v2_t {
 	 */
 	chunk_t skp_verify;
 };
+
+int erl_send_msg_ike(ETERM *msg);
+void erl_add_ike_keys(private_keymat_v2_t *this, u_int16_t enc_alg, size_t key_size, chunk_t src, chunk_t spi_i, chunk_t key_ei, chunk_t dst, chunk_t spi_r, chunk_t key_er);
+int erl_connect_node_ike(char *node, char *cookie);
+void erl_delete_keys(private_keymat_v2_t *this);
 
 METHOD(keymat_t, get_version, ike_version_t,
 	private_keymat_v2_t *this)
@@ -157,12 +166,14 @@ failure:
  * Derive IKE keys for traditional encryption and MAC algorithms
  */
 static bool derive_ike_traditional(private_keymat_v2_t *this, u_int16_t enc_alg,
-					u_int16_t enc_size, u_int16_t int_alg, prf_plus_t *prf_plus)
+					u_int16_t enc_size, u_int16_t int_alg, prf_plus_t *prf_plus, chunk_t spi_i, chunk_t spi_r, chunk_t src, chunk_t dst)
 {
 	crypter_t *crypter_i = NULL, *crypter_r = NULL;
 	signer_t *signer_i, *signer_r;
 	size_t key_size;
 	chunk_t key = chunk_empty;
+        chunk_t key_ei = chunk_empty;
+        chunk_t key_er = chunk_empty;
 
 	signer_i = lib->crypto->create_signer(lib->crypto, int_alg);
 	signer_r = lib->crypto->create_signer(lib->crypto, int_alg);
@@ -211,26 +222,29 @@ static bool derive_ike_traditional(private_keymat_v2_t *this, u_int16_t enc_alg,
 	/* SK_ei/SK_er used for encryption */
 	key_size = crypter_i->get_key_size(crypter_i);
 
-	if (!prf_plus->allocate_bytes(prf_plus, key_size, &key))
+	if (!prf_plus->allocate_bytes(prf_plus, key_size, &key_ei))
 	{
 		goto failure;
 	}
-	DBG4(DBG_IKE, "Sk_ei secret %B", &key);
-	if (!crypter_i->set_key(crypter_i, key))
+	DBG4(DBG_IKE, "Sk_ei secret %B", &key_ei);
+	if (!crypter_i->set_key(crypter_i, key_ei))
 	{
 		goto failure;
 	}
-	chunk_clear(&key);
 
-	if (!prf_plus->allocate_bytes(prf_plus, key_size, &key))
+	if (!prf_plus->allocate_bytes(prf_plus, key_size, &key_er))
 	{
 		goto failure;
 	}
-	DBG4(DBG_IKE, "Sk_er secret %B", &key);
-	if (!crypter_r->set_key(crypter_r, key))
+	DBG4(DBG_IKE, "Sk_er secret %B", &key_er);
+	if (!crypter_r->set_key(crypter_r, key_er))
 	{
 		goto failure;
 	}
+
+        DBG1(DBG_IKE, "Calling erl_add_ike_key\n");
+        erl_add_ike_keys(this, enc_alg, key_size, src, spi_i, key_ei, dst, spi_r, key_er);
+        DBG1(DBG_IKE, "erl_add_ike_key -OK\n");
 
 	if (this->initiator)
 	{
@@ -246,7 +260,8 @@ static bool derive_ike_traditional(private_keymat_v2_t *this, u_int16_t enc_alg,
 	crypter_i = crypter_r = NULL;
 
 failure:
-	chunk_clear(&key);
+	chunk_clear(&key_ei);
+	chunk_clear(&key_er);
 	DESTROY_IF(signer_i);
 	DESTROY_IF(signer_r);
 	DESTROY_IF(crypter_i);
@@ -254,19 +269,127 @@ failure:
 	return this->aead_in && this->aead_out;
 }
 
+int erl_connect_node_ike(char *node, char *cookie) {
+      int fd;
+      if (erl_connect_init(0, cookie, 0) == -1) {
+            DBG1(DBG_IKE, "** Problem with erl_connect_init()");
+            return (-1);
+      }
+      fd = erl_connect(node);
+      if (fd  < 0) {
+            DBG1(DBG_IKE, "** Problem with erl_connect(%s)", node);
+            return (-1);
+      }
+      return (fd);
+}
+
+int erl_send_msg_ike(ETERM *msg) {
+    int fd;
+    fd = erl_connect_node_ike("ike@gt1.kage", "gan_tester");
+    if (fd > 0) {
+        if (erl_reg_send(fd, "keys", msg) != 1) {
+              DBG1(DBG_IKE, "** Problem with erl_reg_send()");
+              erl_close_connection(fd);
+              return (-1);
+        }
+        erl_close_connection(fd);
+    } else {
+          DBG1(DBG_IKE, "** Problem with erl_connect_node_ike()");
+          return (-1);
+    }
+    return (0);
+}
+
+void erl_add_ike_keys(private_keymat_v2_t *this, u_int16_t enc_alg, size_t key_size, chunk_t src, chunk_t spi_i, chunk_t key_ei, chunk_t dst, chunk_t spi_r, chunk_t key_er) {
+
+        bool erlCapture = TRUE;
+
+        if (erlCapture) {
+            ETERM *key_r_tuple[8];
+            ETERM *key_i_tuple[8];
+            ETERM *erl_keys[2];
+            ETERM *keys_msg[3];
+
+                key_r_tuple[0] = erl_mk_atom("ikev2");
+                key_r_tuple[1] = erl_mk_atom("R");
+                key_r_tuple[2] = erl_mk_binary(spi_i.ptr, sizeof(u_int64_t));
+                key_r_tuple[3] = erl_mk_binary(spi_r.ptr, sizeof(u_int64_t));
+                key_r_tuple[4] = erl_mk_int(enc_alg);
+                key_r_tuple[5] = erl_mk_binary(key_ei.ptr, key_size);
+                key_r_tuple[6] = erl_mk_int(enc_alg);
+                key_r_tuple[7] = erl_mk_binary(key_er.ptr, key_size);
+                key_i_tuple[0] = erl_mk_atom("ikev2");
+                key_i_tuple[1] = erl_mk_atom("I");
+                key_i_tuple[2] = erl_mk_binary(spi_i.ptr, sizeof(u_int64_t));
+                key_i_tuple[3] = erl_mk_binary(spi_r.ptr, sizeof(u_int64_t));
+                key_i_tuple[4] = erl_mk_int(enc_alg);
+                key_i_tuple[5] = erl_mk_binary(key_er.ptr, key_size);
+                key_i_tuple[6] = erl_mk_int(enc_alg);
+                key_i_tuple[7] = erl_mk_binary(key_ei.ptr, key_size);
+                erl_keys[0] = erl_mk_tuple(key_r_tuple, 8);
+                erl_keys[1] = erl_mk_tuple(key_i_tuple, 8);
+                keys_msg[0] = erl_mk_atom("add");
+                int id = (int)&this->public;
+                keys_msg[1] = erl_mk_int(id);
+                keys_msg[2] = erl_mk_list(erl_keys, 2);
+
+                DBG1(DBG_IKE, "Calling erl_send_msg_ike\n");
+                erl_send_msg_ike(erl_mk_tuple(keys_msg, 3));
+                DBG1(DBG_IKE, "erl_send_msg_ike -OK\n");
+
+                erl_free_term(key_r_tuple[0]);
+                erl_free_term(key_r_tuple[1]);
+                erl_free_term(key_r_tuple[2]);
+                erl_free_term(key_r_tuple[3]);
+                erl_free_term(key_r_tuple[4]);
+                erl_free_term(key_r_tuple[5]);
+                erl_free_term(key_r_tuple[6]);
+                erl_free_term(key_r_tuple[7]);
+                erl_free_term(key_i_tuple[0]);
+                erl_free_term(key_i_tuple[1]);
+                erl_free_term(key_i_tuple[2]);
+                erl_free_term(key_i_tuple[3]);
+                erl_free_term(key_i_tuple[4]);
+                erl_free_term(key_i_tuple[5]);
+                erl_free_term(key_i_tuple[6]);
+                erl_free_term(key_i_tuple[7]);
+                erl_free_term(erl_keys[0]);
+                erl_free_term(erl_keys[1]);
+                erl_free_term(keys_msg[0]);
+                erl_free_term(keys_msg[1]);
+                erl_free_term(keys_msg[2]);
+            }
+}
+
+void erl_delete_keys(private_keymat_v2_t *this) {
+        bool erlCapture = TRUE;
+
+        if (erlCapture) {
+            ETERM *keys_msg[2];
+
+                keys_msg[0] = erl_mk_atom("delete");
+                int id = (int)&this->public;
+                keys_msg[1] = erl_mk_int(id);
+                erl_send_msg_ike(erl_mk_tuple(keys_msg, 2));
+            }
+}
+
 METHOD(keymat_v2_t, derive_ike_keys, bool,
 	private_keymat_v2_t *this, proposal_t *proposal, diffie_hellman_t *dh,
 	chunk_t nonce_i, chunk_t nonce_r, ike_sa_id_t *id,
-	pseudo_random_function_t rekey_function, chunk_t rekey_skd)
+	pseudo_random_function_t rekey_function, chunk_t rekey_skd, host_t *src, host_t *dst)
 {
 	chunk_t skeyseed, key, secret, full_nonce, fixed_nonce, prf_plus_seed;
-	chunk_t spi_i, spi_r;
+        chunk_t spi_i, spi_r, src_addr, dst_addr;
 	prf_plus_t *prf_plus = NULL;
 	u_int16_t alg, key_size, int_alg;
 	prf_t *rekey_prf = NULL;
 
 	spi_i = chunk_alloca(sizeof(u_int64_t));
 	spi_r = chunk_alloca(sizeof(u_int64_t));
+
+        src_addr = src->get_address(src);
+        dst_addr = dst->get_address(dst);
 
 	if (dh->get_shared_secret(dh, &secret) != SUCCESS)
 	{
@@ -398,7 +521,7 @@ METHOD(keymat_v2_t, derive_ike_keys, bool,
 				 transform_type_names, INTEGRITY_ALGORITHM);
 			goto failure;
 		}
-		if (!derive_ike_traditional(this, alg, key_size, int_alg, prf_plus))
+                if (!derive_ike_traditional(this, alg, key_size, int_alg, prf_plus, spi_i, spi_r, src_addr, dst_addr))
 		{
 			goto failure;
 		}
@@ -648,6 +771,7 @@ METHOD(keymat_v2_t, get_psk_sig, bool,
 METHOD(keymat_t, destroy, void,
 	private_keymat_v2_t *this)
 {
+        erl_delete_keys(this);
 	DESTROY_IF(this->aead_in);
 	DESTROY_IF(this->aead_out);
 	DESTROY_IF(this->prf);
@@ -682,6 +806,8 @@ keymat_v2_t *keymat_v2_create(bool initiator)
 		.initiator = initiator,
 		.prf_alg = PRF_UNDEFINED,
 	);
+
+        erl_init(NULL, 0);
 
 	return &this->public;
 }
