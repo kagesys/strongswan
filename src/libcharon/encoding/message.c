@@ -181,7 +181,7 @@ static payload_rule_t ike_auth_i_rules[] = {
 	{AUTHENTICATION,				0,	1,						TRUE,	TRUE},
 	{ID_INITIATOR,					0,	1,						TRUE,	FALSE},
 	{CERTIFICATE,					0,	MAX_CERT_PAYLOADS,		TRUE,	FALSE},
-	{CERTIFICATE_REQUEST,			0,	1,						TRUE,	FALSE},
+	{CERTIFICATE_REQUEST,			0,	2,						TRUE,	FALSE},		//AlanE: max was 1 but Samsung Galxy S sends 2
 	{ID_RESPONDER,					0,	1,						TRUE,	FALSE},
 #ifdef ME
 	{SECURITY_ASSOCIATION,			0,	1,						TRUE,	FALSE},
