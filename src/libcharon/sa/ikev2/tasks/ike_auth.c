@@ -268,7 +268,8 @@ static bool load_cfg_candidates(private_ike_auth_t *this)
 
 	me = this->ike_sa->get_my_host(this->ike_sa);
 	other = this->ike_sa->get_other_host(this->ike_sa);
-	my_id = this->ike_sa->get_my_id(this->ike_sa);
+// AlanE	my_id = ???????? lost in time
+	my_id = identification_create_from_encoding(ID_ANY, chunk_empty);
 	other_id = this->ike_sa->get_other_id(this->ike_sa);
 
 	DBG1(DBG_CFG, "looking for peer configs matching %H[%Y]...%H[%Y]",
@@ -277,6 +278,7 @@ static bool load_cfg_candidates(private_ike_auth_t *this)
 											me, other, my_id, other_id, IKEV2);
 	while (enumerator->enumerate(enumerator, &peer_cfg))
 	{
+		DBG1(DBG_CFG, "AlanE enumerator->peer config '%s'", peer_cfg->get_name(peer_cfg));
 		peer_cfg->get_ref(peer_cfg);
 		if (this->peer_cfg == NULL)
 		{	/* best match */
@@ -709,14 +711,15 @@ METHOD(task_t, build_r, status_t,
 			this->ike_sa->set_my_id(this->ike_sa, id_cfg->clone(id_cfg));
 			id = id_cfg;
 		}
-		else
-		{	/* IDr received, check if it matches configuration */
-			if (id_cfg && !id->matches(id, id_cfg))
-			{
-				DBG1(DBG_CFG, "received IDr %Y, but require %Y", id, id_cfg);
-				goto peer_auth_failed;
-			}
-		}
+//		else
+//		{	/* IDr received, check if it matches configuration */
+// AlanE
+//			if (id_cfg && !id->matches(id, id_cfg))
+//			{
+//				DBG1(DBG_CFG, "received IDr %Y, but require %Y", id, id_cfg);
+//				goto peer_auth_failed;
+//			}
+//		}
 
 		id_payload = id_payload_create_from_identification(ID_RESPONDER, id);
 		get_reserved_id_bytes(this, id_payload);
