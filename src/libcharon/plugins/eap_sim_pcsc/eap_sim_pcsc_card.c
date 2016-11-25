@@ -33,18 +33,18 @@ int SelectFile(SCARDHANDLE hCard,
 int ReadFile(SCARDHANDLE hCard, 
                 const SCARD_IO_REQUEST *pioSendPci, 
                 SCARD_IO_REQUEST *pioRecvPci,
-                sim_types_t sim_type,
-                unsigned char *data, DWORD *len);
+                sim_types_t sim_type, BYTE file_size,
+                BYTE *data, DWORD *len);
 
 int GetImsi(SCARDHANDLE hCard, 
                 const SCARD_IO_REQUEST *pioSendPci, 
                 SCARD_IO_REQUEST *pioRecvPci, 
                 sim_types_t sim_type,
-                char *imsi, DWORD *len,
+                BYTE *imsi, DWORD *len,
                 unsigned char *aid, size_t aidlen);
 
 int ParseFspTempl(unsigned char *buf, size_t buf_len,
-                int *ps_do, int *file_len);
+                int *ps_do, BYTE *file_len);
                 
 int GetAid(SCARDHANDLE hCard, 
                 const SCARD_IO_REQUEST *pioSendPci, 
@@ -121,6 +121,7 @@ struct private_eap_sim_pcsc_card_t {
 
 /* USIM commands */
 #define USIM_CLA                        0x00
+#define USIM_CMD_READ_BIN               0x00, 0xb0, 0x00, 0x00
 #define USIM_CMD_RUN_UMTS_ALG           0x00, 0x88, 0x00, 0x81, 0x22
 #define USIM_CMD_GET_RESPONSE           0x00, 0xc0, 0x00, 0x00
 
@@ -230,7 +231,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 	{
 		DWORD dwActiveProtocol = -1;
 		const SCARD_IO_REQUEST *pioSendPci;
-		SCARD_IO_REQUEST pioRecvPci;
+		SCARD_IO_REQUEST *pioRecvPci = NULL;
 		BYTE pbRecvBuffer[64];
 		DWORD dwRecvLength;
 		char imsi[SIM_IMSI_MAX_LEN + 1];
@@ -294,7 +295,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		/* APDU: Select MF */
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci, pbSelectMF, sizeof(pbSelectMF),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -311,7 +312,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		/* APDU: Select DF GSM */
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci, pbSelectDFGSM, sizeof(pbSelectDFGSM),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -328,7 +329,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		/* APDU: Select IMSI */
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci, pbSelectIMSI, sizeof(pbSelectIMSI),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -345,7 +346,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		/* APDU: Read Binary (of IMSI) */
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci, pbReadBinary, sizeof(pbReadBinary),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -378,7 +379,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci,
 						   pbRunGSMAlgorithm, sizeof(pbRunGSMAlgorithm),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -395,7 +396,7 @@ METHOD(simaka_card_t, get_triplet, bool,
 		/* APDU: Get Response (of Run GSM Algorithm) */
 		dwRecvLength = sizeof(pbRecvBuffer);
 		rv = SCardTransmit(hCard, pioSendPci, pbGetResponse, sizeof(pbGetResponse),
-						   &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+						   pioRecvPci, pbRecvBuffer, &dwRecvLength);
 		if (rv != SCARD_S_SUCCESS)
 		{
 			DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -538,9 +539,9 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
     {
         DWORD dwActiveProtocol = -1;
         const SCARD_IO_REQUEST *pioSendPci;
-        SCARD_IO_REQUEST pioRecvPci;
+        SCARD_IO_REQUEST *pioRecvPci = NULL;
         BYTE pbRecvBuffer[64];
-        DWORD dwRecvLength;
+        DWORD dwRecvLength = sizeof(pbRecvBuffer);
         char imsi[SIM_IMSI_MAX_LEN + 1];
 
         /* See GSM 11.11 for (U)SIM APDUs */
@@ -600,28 +601,14 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
         hCard_status = TRANSACTION;
         
         /* Determin SIM/USIM Card type */
-        sim_type = SCARD_GSM_SIM;
+        sim_type = SCARD_UMTS_USIM;
         DBG1(DBG_IKE, "Scard: verifying USIM support\n");
-        unsigned char buf[100];
-        size_t blen;
-        blen = sizeof(buf);
-        
-        if (SelectFile(hCard, pioSendPci, &pioRecvPci, SCARD_FILE_MF, buf, &blen, SCARD_UMTS_USIM, NULL, 0)) 
-        {
-            DBG1(DBG_IKE, "Scard: USIM is not supported\n");
-            continue;
-        } 
-        else 
-        {
-            DBG1(DBG_IKE, "Scard: USIM is supported\n");
-            sim_type = SCARD_UMTS_USIM;
-        }
 
         /* Select UMTS AID from EF_DIR records */
         unsigned char aid[32];
         size_t aid_len;
 
-        aid_len = GetAid(hCard, pioSendPci, &pioRecvPci, aid, sizeof(aid));
+        aid_len = GetAid(hCard, pioSendPci, pioRecvPci, aid, sizeof(aid));
         if (aid_len < 0) 
         {
             DBG1(DBG_IKE, "SCARD: Failed to find AID for 3G USIM app");
@@ -629,7 +616,7 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
         }
         
         /* Select IMSI EF */
-        if (GetImsi(hCard, pioSendPci, &pioRecvPci, sim_type, pbRecvBuffer, &dwRecvLength, aid, aid_len) < 0)
+        if (GetImsi(hCard, pioSendPci, pioRecvPci, sim_type, pbRecvBuffer, &dwRecvLength, aid, aid_len) < 0)
         {
             DBG1(DBG_IKE, "Scard GetImsi Failed");
             continue;
@@ -654,7 +641,7 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
         dwRecvLength = sizeof(pbRecvBuffer);
         rv = SCardTransmit(hCard, pioSendPci,
                            pbRunUmtsAlgorithm, sizeof(pbRunUmtsAlgorithm),
-                           &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+                           pioRecvPci, pbRecvBuffer, &dwRecvLength);
         if (rv != SCARD_S_SUCCESS)
         {
             DBG1(DBG_IKE, "SCardTransmit: %s", pcsc_stringify_error(rv));
@@ -678,7 +665,7 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
         /* APDU: Get Response (of Run Umts Algorithm) */
         dwRecvLength = sizeof(pbRecvBuffer);
         rv = SCardTransmit(hCard, pioSendPci, pbGetResponse, sizeof(pbGetResponse),
-                           &pioRecvPci, pbRecvBuffer, &dwRecvLength);
+                           pioRecvPci, pbRecvBuffer, &dwRecvLength);
         if (rv != SCARD_S_SUCCESS)
         {
             DBG1(DBG_IKE, "Scard: UMTS auth failed to get response");
@@ -833,6 +820,9 @@ int SelectFile(SCARDHANDLE hCard,
             memcpy(aid_cmd + 5, aid, aidlen);
             aid_cmdlen = 5 + aidlen;
             ret = SCardTransmit(hCard, pioSendPci, aid_cmd, aid_cmdlen, pioRecvPci, resp, &len);
+//AlanE: quick hack
+            get_resp[4] = resp[1];
+            ret = SCardTransmit(hCard, pioSendPci, get_resp, sizeof(get_resp), pioRecvPci, buf, &rlen);
         } 
         cmd[5] = file_id >> 8;
         cmd[6] = file_id & 0xff;
@@ -914,16 +904,16 @@ int SelectFile(SCARDHANDLE hCard,
 int ReadFile(SCARDHANDLE hCard, 
              const SCARD_IO_REQUEST *pioSendPci, 
              SCARD_IO_REQUEST *pioRecvPci,
-             sim_types_t sim_type,
-             unsigned char *data, DWORD *len)
+             sim_types_t sim_type, BYTE file_size,
+             BYTE *data, DWORD *len)
 {
-    unsigned char cmd[5] = { SIM_CMD_READ_BIN /* , len */ };
-    unsigned char get_resp[5] = { SIM_CMD_GET_RESPONSE };
+    BYTE cmd[5] = { SIM_CMD_READ_BIN /* , len */ };
+    BYTE get_resp[5] = { SIM_CMD_GET_RESPONSE };
     DWORD rlen;
 
     long ret;
 
-    cmd[4] = *len;
+    cmd[4] = file_size;
     if (sim_type == SCARD_UMTS_USIM)
     {
         cmd[0] = USIM_CLA;
@@ -934,6 +924,11 @@ int ReadFile(SCARDHANDLE hCard,
         return -1;
     }
     DBG3(DBG_IKE, "Scard ReadFile returned: %b", data, *len);
+    if (*len < 2) 
+    {
+        DBG1(DBG_IKE, "Scard ReadFile returned invalid data len %d", *len);
+        return  -1;
+    }
     switch (data[*len - 2])
     {
         case 0x90:
@@ -992,12 +987,12 @@ int GetImsi(SCARDHANDLE hCard,
         const SCARD_IO_REQUEST *pioSendPci, 
         SCARD_IO_REQUEST *pioRecvPci,
         sim_types_t sim_type,
-        char *imsi, DWORD *len,
+        BYTE *imsi, DWORD *len,
         unsigned char *aid, size_t aidlen)
 {
     unsigned char buf[100];
-    size_t blen, i;
-    char *pos;
+    size_t blen;
+    BYTE file_size;
 
     DBG3(DBG_IKE, "Scard: reading IMSI from (GSM) EF-IMSI\n");
     blen = sizeof(buf);
@@ -1017,34 +1012,29 @@ int GetImsi(SCARDHANDLE hCard,
     if (sim_type == SCARD_GSM_SIM) {
         blen = (buf[2] << 8) | buf[3];
     } else {
-        int file_size;
         if (ParseFspTempl(buf, blen, NULL, &file_size))
             return -1;
-        blen = file_size;
     }
-    if (blen < 2 || blen > sizeof(buf)) {
+    if (file_size < 2 || file_size > *len) {
         DBG3(DBG_IKE, "Scard: invalid IMSI file length=%d\n",
-               blen);
+               file_size);
         return -1;
     }
     DBG3(DBG_IKE, "Scard: IMSI file length=%d buffer len=%d\n",
-           blen, len);
-    if (blen <= 2 ) {
-        return -1;
-    }
-    *len = blen + 2;
-    if (ReadFile(hCard, pioSendPci, pioRecvPci, sim_type, imsi, len) < 0)
+           file_size, len);
+
+    if (ReadFile(hCard, pioSendPci, pioRecvPci, sim_type, file_size, imsi, len) < 0)
     {
         DBG1(DBG_IKE, "Scard: Problem reading IMSI File\n");
         return -1;
     }
-    DBG3(DBG_IKE, "Scard: GetImsi : OK %b", imsi, *len);
+    DBG3(DBG_IKE, "Scard: GetImsi : OK %b", imsi, blen);
     return 0;
 }
 
 
 int ParseFspTempl(unsigned char *buf, size_t buf_len,
-                 int *ps_do, int *file_len)
+                 int *ps_do, BYTE *file_len)
 {
         unsigned char *pos, *end;
 
