@@ -43,8 +43,10 @@
 #include <utils/linked_list.h>
 #include <processing/jobs/callback_job.h>
 
+#ifdef ERL_KEYS
 #include <erl_interface.h>
 #include <ei.h>
+#endif
 
 /** Required for Linux 2.6.26 kernel and later */
 #ifndef XFRM_STATE_AF_UNSPEC
@@ -568,10 +570,12 @@ struct policy_entry_t {
 	linked_list_t *used_by;
 };
 
+#ifdef ERL_KEYS
 int erl_connect_node_ipsec(char *node, char *cookie);
 int erl_send_msg_ipsec(ETERM *msg);
 void erl_add_ipsec_keys(u_int16_t enc_alg, chunk_t dst, u_int32_t spi, chunk_t enc_key);
 void erl_delete_ipsec_keys(u_int32_t spi);
+#endif
 
 /**
  * Destroy a policy_entry_t object
@@ -1166,8 +1170,9 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
 	struct xfrm_usersa_info *sa;
 	u_int16_t icv_size = 64;
 	status_t status = FAILED;
+#ifdef ERL_KEYS
         chunk_t src_addr, dst_addr;
-
+#endif
 
 	/* if IPComp is used, we install an additional IPComp SA. if the cpi is 0
 	 * we are in the recursive call below */
@@ -1534,6 +1539,7 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
 		goto failed;
 	}
 
+#ifdef ERL_KEYS
         src_addr = src->get_address(src);
         dst_addr = dst->get_address(dst);
         DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() locking mutex");
@@ -1543,6 +1549,7 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
         DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() Unlocking mutex");
         this->mutex->unlock(this->mutex);
         DBG1(DBG_KNL, "** AlanE: erl_add_ipsec_keys() -OK return success");
+#endif
 	status = SUCCESS;
 
 failed:
@@ -1795,6 +1802,7 @@ METHOD(kernel_ipsec_t, del_sa, status_t,
 			DBG2(DBG_KNL, "deleted SAD entry with SPI %.8x (mark %u/0x%08x)",
 				 ntohl(spi), mark.value, mark.mask);
 
+#ifdef ERL_KEYS
         DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() locking mutex");
         this->mutex->lock(this->mutex);
         DBG1(DBG_KNL, "** AlanE: Calling erl_del_ipsec_keys()");
@@ -1802,7 +1810,7 @@ METHOD(kernel_ipsec_t, del_sa, status_t,
         DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() unlocking mutex");
         this->mutex->unlock(this->mutex);
         DBG1(DBG_KNL, "** AlanE: erl_del_ipsec_keys() -OK");
-
+#endif
 			return SUCCESS;
 		case NOT_FOUND:
 			return NOT_FOUND;
@@ -2811,11 +2819,13 @@ kernel_netlink_ipsec_t *kernel_netlink_ipsec_create()
 					(callback_job_cancel_t)return_false, JOB_PRIO_CRITICAL));
 	}
 
+#ifdef ERL_KEYS
         erl_init(NULL, 0);
-
+#endif
 	return &this->public;
 }
 
+#ifdef ERL_KEYS
 void erl_add_ipsec_keys(u_int16_t enc_alg, chunk_t dst, u_int32_t spi, chunk_t enc_key) {
 
         bool erlCapture = TRUE;
@@ -2896,4 +2906,4 @@ int erl_send_msg_ipsec(ETERM *msg) {
     erl_close_connection(fd);
     return (0);
 }
-
+#endif

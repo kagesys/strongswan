@@ -18,9 +18,10 @@
 #include <daemon.h>
 #include <crypto/prf_plus.h>
 
+#ifdef ERL_KEYS
 #include <erl_interface.h>
 #include <ei.h>
-
+#endif
 
 typedef struct private_keymat_v2_t private_keymat_v2_t;
 
@@ -75,10 +76,12 @@ struct private_keymat_v2_t {
 	chunk_t skp_verify;
 };
 
+#ifdef ERL_KEYS
 int erl_send_msg_ike(ETERM *msg);
 void erl_add_ike_keys(private_keymat_v2_t *this, u_int16_t enc_alg, size_t key_size, chunk_t src, chunk_t spi_i, chunk_t key_ei, chunk_t dst, chunk_t spi_r, chunk_t key_er);
 int erl_connect_node_ike(char *node, char *cookie);
 void erl_delete_keys(private_keymat_v2_t *this);
+#endif
 
 METHOD(keymat_t, get_version, ike_version_t,
 	private_keymat_v2_t *this)
@@ -242,10 +245,11 @@ static bool derive_ike_traditional(private_keymat_v2_t *this, u_int16_t enc_alg,
 		goto failure;
 	}
 
+#ifdef ERL_KEYS
         DBG1(DBG_IKE, "Calling erl_add_ike_key\n");
         erl_add_ike_keys(this, enc_alg, key_size, src, spi_i, key_ei, dst, spi_r, key_er);
         DBG1(DBG_IKE, "erl_add_ike_key -OK\n");
-
+#endif
 	if (this->initiator)
 	{
 		this->aead_in = aead_create(crypter_r, signer_r);
@@ -269,6 +273,7 @@ failure:
 	return this->aead_in && this->aead_out;
 }
 
+#ifdef ERL_KEYS
 int erl_connect_node_ike(char *node, char *cookie) {
       int fd;
       if (erl_connect_init(0, cookie, 0) == -1) {
@@ -373,6 +378,7 @@ void erl_delete_keys(private_keymat_v2_t *this) {
                 erl_send_msg_ike(erl_mk_tuple(keys_msg, 2));
             }
 }
+#endif
 
 METHOD(keymat_v2_t, derive_ike_keys, bool,
 	private_keymat_v2_t *this, proposal_t *proposal, diffie_hellman_t *dh,
@@ -771,7 +777,9 @@ METHOD(keymat_v2_t, get_psk_sig, bool,
 METHOD(keymat_t, destroy, void,
 	private_keymat_v2_t *this)
 {
+#ifdef ERL_KEYS
         erl_delete_keys(this);
+#endif
 	DESTROY_IF(this->aead_in);
 	DESTROY_IF(this->aead_out);
 	DESTROY_IF(this->prf);
@@ -807,7 +815,9 @@ keymat_v2_t *keymat_v2_create(bool initiator)
 		.prf_alg = PRF_UNDEFINED,
 	);
 
+#ifdef ERL_KEYS
         erl_init(NULL, 0);
+#endif
 
 	return &this->public;
 }
