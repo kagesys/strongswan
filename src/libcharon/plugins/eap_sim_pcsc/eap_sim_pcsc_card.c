@@ -1105,9 +1105,15 @@ int GetAid(SCARDHANDLE hCard,
     efdir = (struct efdir *) buf;
     blen = sizeof(buf);
     
+    if (SelectFile(hCard, pioSendPci, pioRecvPci, SCARD_FILE_MF, buf, &blen, SCARD_UMTS_USIM, NULL, 0) < 0)
+    {
+        DBG1(DBG_IKE, "SCard: Failed to select MF");
+        return -1;
+    }
+
     if (SelectFile(hCard, pioSendPci, pioRecvPci, SCARD_FILE_EF_DIR, buf, &blen, SCARD_UMTS_USIM, NULL, 0))
     {
-        DBG1(DBG_IKE, "SCard: Failed to read EF_DIR");
+        DBG1(DBG_IKE, "SCard: Failed to select EF_DIR");
         return -1;
     }
     for (rec = 1; rec < 10; rec++) 
@@ -1204,13 +1210,15 @@ int GetRecordLen(SCARDHANDLE hCard,
          DBG3(DBG_IKE, "SCARD: failed to determine file length for record %d", recnum);
          return -1;
      }
+     if (blen > 2 && buf[blen-1] == 0x00 && buf[blen-2] == 0x90)
+         return (blen - 2);
      if (blen < 2 || buf[0] != 0x6c) 
      {
          DBG3(DBG_IKE, "SCARD: unexpected response to file length determination");
          return -1;
      }
      return buf[1];
- }
+}
 
 
 int ReadRecord(SCARDHANDLE hCard, 
