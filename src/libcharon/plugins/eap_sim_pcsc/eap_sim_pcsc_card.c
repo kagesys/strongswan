@@ -653,6 +653,9 @@ METHOD(simaka_card_t, get_quintuplet, status_t,
         if (dwRecvLength == 2 && pbRecvBuffer[0] == 0x98 && pbRecvBuffer[1] == 0x62) {
             DBG1(DBG_IKE, "Scard: UMTS auth failed - MAC != XMAC\n");
             continue;
+        } else if (dwRecvLength == 2 && pbRecvBuffer[0] == 0x90 && pbRecvBuffer[1] == 0x00) {
+            DBG3(DBG_IKE, "?RunUmtsAlg returned: 0x9000 assume length is 0x35");
+            pbRecvBuffer[1] = 0x35;
         } else if (dwRecvLength != 2 || pbRecvBuffer[0] != 0x61) {
             DBG1(DBG_IKE, "Scard: unexpected response for UMTS auth request (dwRecvLength=%d pbRecvBuffer=%02x %02x)",
                    dwRecvLength, pbRecvBuffer[0], pbRecvBuffer[1]);
@@ -794,7 +797,7 @@ int SelectFile(SCARDHANDLE hCard,
                 size_t aidlen)
      {
         long ret;
-        unsigned char resp[3];
+        unsigned char resp[100];
         unsigned char aid_cmd[50] = { SIM_CMD_SELECT };
         unsigned char cmd[50] = { SIM_CMD_SELECT };
         int cmdlen, aid_cmdlen;
@@ -835,6 +838,13 @@ int SelectFile(SCARDHANDLE hCard,
             DBG1(DBG_IKE, "Scard: SCardTransmit failed (err=0x%lx)", ret);
             return -1;
         }
+	if (len > 2 && resp[len-2] == 0x90 && resp[len-1] == 0x00) 
+	{
+            DBG1(DBG_IKE, "Scard: looks like Select returned the file\n");
+            memcpy(buf, &resp, len);		
+            *buf_len = len;
+            return 0;
+ 	}
         if (len != 2) 
         {
             DBG1(DBG_IKE, "Scard: unexpected resp len %d (expected 2)\n", (int) len);
