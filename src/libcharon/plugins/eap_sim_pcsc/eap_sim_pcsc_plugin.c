@@ -56,6 +56,8 @@ METHOD(plugin_t, get_features, int,
 		PLUGIN_CALLBACK(simaka_manager_register, get_card),
 			PLUGIN_PROVIDE(CUSTOM, "sim-card"),
 				PLUGIN_DEPENDS(CUSTOM, "sim-manager"),
+			PLUGIN_PROVIDE(CUSTOM, "aka-card"),
+//                PLUGIN_DEPENDS(CUSTOM, "aka-manager"),
 	};
 	*features = f;
 	return countof(f);
