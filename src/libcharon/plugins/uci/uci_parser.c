@@ -60,7 +60,8 @@ typedef struct {
 METHOD(enumerator_t, section_enumerator_enumerate, bool,
 	section_enumerator_t *this, va_list args)
 {
-	struct uci_element *element;
+	struct uci_option *option;
+	struct uci_section *section;
 	char **value;
 	int i;
 
@@ -72,28 +73,39 @@ METHOD(enumerator_t, section_enumerator_enumerate, bool,
 	value = va_arg(args, char**);
 	if (value)
 	{
-		if (uci_lookup(this->ctx, &element, this->package,
-					   this->current->name, "name") == UCI_OK)
-		{	/* use "name" attribute as config name if available ... */
-			*value = uci_to_option(element)->value;
-		}
-		else
-		{	/* ... or the section name becomes config name */
+		section = uci_lookup_section(this->ctx, this->package, this->current->name);
+		if (section)
+		{   
+			*value = section->type;
+		} else {
+			section =  uci_to_section(this->current);
 			*value = uci_to_section(this->current)->type;
 		}
 	}
-
+//	{
+//		if (uci_lookup(this->ctx, &element, this->package,
+//					   this->current->name, "name") == UCI_OK)
+//		{	/* use "name" attribute as config name if available ... */
+//			*value = uci_to_option(element)->value;
+//		}
+//		else
+//		{	/* ... or the section name becomes config name */
+//			*value = uci_to_section(this->current)->type;
+//		}
+//	}
 	/* followed by keyword parameters */
 	for (i = 0; this->keywords[i]; i++)
 	{
 		value = va_arg(args, char**);
-		if (value && uci_lookup(this->ctx, &element, this->package,
-						  this->current->name, this->keywords[i]) == UCI_OK)
+		if (value)
 		{
-			*value = uci_to_option(element)->value;
+			option = uci_lookup_option(this->ctx, section, this->keywords[i]);
+			if (option)
+			{
+				*value = option->v.string;
+			}
 		}
 	}
-
 	this->current = list_to_element(this->current->list.next);
 	return TRUE;
 }

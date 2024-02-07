@@ -89,7 +89,15 @@ static traffic_selector_t *create_ts(char *string)
 	{
 		traffic_selector_t *ts;
 
-		ts = traffic_selector_create_from_cidr(string, 0, 0, 65535);
+
+		if (streq(string, "%dynamic"))
+		{
+			ts = traffic_selector_create_dynamic(0, 0, 65535);
+		}
+		else
+		{
+			ts = traffic_selector_create_from_cidr(string, 0, 0, 65535);
+		}
 		if (ts)
 		{
 			return ts;
@@ -124,6 +132,7 @@ METHOD(enumerator_t, peer_enumerator_enumerate, bool,
 	char *local_id, *local_net, *remote_id, *remote_net;
 	peer_cfg_t **cfg;
 	child_cfg_t *child_cfg;
+        host_t *vip = NULL;
 	ike_cfg_t *ike_cfg;
 	auth_cfg_t *auth;
 	ike_cfg_create_t ike = {
@@ -151,6 +160,8 @@ METHOD(enumerator_t, peer_enumerator_enumerate, bool,
 			},
 		},
 		.mode = MODE_TUNNEL,
+		.start_action = ACTION_RESTART,
+		.dpd_action = ACTION_RESTART,
 	};
 
 	VA_ARGS_VGET(args, cfg);
@@ -177,17 +188,17 @@ METHOD(enumerator_t, peer_enumerator_enumerate, bool,
 		peer.rekey_time = create_rekey(ike_rekey);
 		this->peer_cfg = peer_cfg_create(name, ike_cfg, &peer);
 		auth = auth_cfg_create();
-		auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_PSK);
-		auth->add(auth, AUTH_RULE_IDENTITY,
-				  identification_create_from_string(local_id));
+		auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_EAP);
+		auth->add(auth, AUTH_RULE_EAP_IDENTITY, identification_create_from_string(local_id));
+		auth->add(auth, AUTH_RULE_IDENTITY, identification_create_from_string(local_id));
 		this->peer_cfg->add_auth_cfg(this->peer_cfg, auth, TRUE);
 
 		auth = auth_cfg_create();
-		auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_PSK);
+		auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_EAP);
 		if (remote_id)
 		{
-			auth->add(auth, AUTH_RULE_IDENTITY,
-					  identification_create_from_string(remote_id));
+			auth->add(auth, AUTH_RULE_IDENTITY, identification_create_from_string(remote_id));
+			auth->add(auth, AUTH_RULE_EAP_IDENTITY, identification_create_from_string(remote_id));
 		}
 		this->peer_cfg->add_auth_cfg(this->peer_cfg, auth, FALSE);
 
@@ -196,6 +207,9 @@ METHOD(enumerator_t, peer_enumerator_enumerate, bool,
 		child_cfg->add_traffic_selector(child_cfg, TRUE, create_ts(local_net));
 		child_cfg->add_traffic_selector(child_cfg, FALSE, create_ts(remote_net));
 		this->peer_cfg->add_child_cfg(this->peer_cfg, child_cfg);
+		vip = host_create_any(AF_INET);
+                this->peer_cfg->add_virtual_ip(this->peer_cfg, vip);
+
 		*cfg = this->peer_cfg;
 		return TRUE;
 	}

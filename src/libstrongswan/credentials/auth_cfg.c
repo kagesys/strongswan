@@ -960,9 +960,10 @@ METHOD(auth_cfg_t, complies, bool,
 					success = FALSE;
 					if (log_error)
 					{
-						DBG1(DBG_CFG, "constraint check failed: %sidentity '%Y'"
-							 " required ", t1 == AUTH_RULE_IDENTITY ? "" :
-							 "EAP ", id1);
+						DBG1(DBG_CFG, "constraint check failed: %s identity "
+                                                         "'%Y' != '%Y'"
+							 " required", t1 == AUTH_RULE_IDENTITY ? "" :
+							 "EAP", id1, id2);
 					}
 				}
 				break;
